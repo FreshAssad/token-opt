@@ -37,6 +37,14 @@ dependencies = [
 [project.optional-dependencies]
 # Full document backends (PDF/DOCX/PPTX/XLSX). HTML & Markdown work without this.
 doc = ["markitdown[pdf,docx,pptx,xlsx]>=0.0.1"]
+# tree-sitter grammars for `compress code` (Python/JS/TS). Other languages fall
+# back to a safe whitespace-only cleanup. email/transcript/generic need nothing.
+code = [
+    "tree-sitter>=0.21",
+    "tree-sitter-python>=0.21",
+    "tree-sitter-javascript>=0.21",
+    "tree-sitter-typescript>=0.21",
+]
 # Optional hi-fi PDF backend. AGPL-3.0 — installing it does NOT relicense
 # token-opt, but if you redistribute a bundle that includes it, AGPL terms
 # apply to that bundle. Off by default on purpose.
@@ -44,7 +52,7 @@ pymupdf = ["pymupdf4llm>=0.0.17"]
 # Exact/near-exact local Gemini token counting (heavy; pulls Vertex SDK).
 gemini = ["google-cloud-aiplatform[tokenization]>=1.60"]
 dev = ["pytest>=7.0"]
-all = ["token-opt[doc,pymupdf,gemini,dev]"]
+all = ["token-opt[doc,code,pymupdf,gemini,dev]"]
 
 [project.scripts]
 token-opt = "tokenopt.cli:app"

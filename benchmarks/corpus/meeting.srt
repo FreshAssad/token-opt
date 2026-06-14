@@ -1,0 +1,19 @@
+1
+00:00:00,000 --> 00:00:03,500
+Alice: Okay, um, thanks everyone for joining the standup.
+
+2
+00:00:03,500 --> 00:00:07,000
+Alice: So, you know, the API work is basically done.
+
+3
+00:00:07,000 --> 00:00:11,200
+Bob: Uh, great. I mean, I still need to, like, finish the tests.
+
+4
+00:00:11,200 --> 00:00:15,000
+Bob: They should be ready by, uh, end of day tomorrow.
+
+5
+00:00:15,000 --> 00:00:18,500
+Carol: Sounds good. I'll handle the deploy once tests are green.

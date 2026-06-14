@@ -1,12 +1,13 @@
 """Auto-detect input type, route to the right compressor, report savings.
 
 Compressed payload is returned for stdout; the :class:`Report` is for stderr.
-Only ``doc`` and ``data`` do real compression in v1; everything else gets a
-safe, lossless whitespace cleanup so `pipe` never silently drops information.
+``data``/``doc``/``code``/``email``/``transcript`` get real compression; prose
+and unknown input get a safe, lossless whitespace cleanup, so `pipe` never
+silently drops information. The LOSSY ``generic`` summarizer is only used when
+explicitly requested (never via auto-detect).
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from .counting import count
@@ -54,31 +55,35 @@ def run(
     use_api: bool = False,
     opus_correction: bool = False,
     force: str | None = None,
+    skeleton: bool = False,
+    keep_quotes: bool = False,
+    summary: bool = False,
+    ratio: float = 0.3,
 ) -> PipeResult:
-    # ``force`` lets the explicit `compress doc|data` commands skip detection.
+    import os
+
+    # ``force`` lets the explicit `compress <mode>` commands skip detection.
     category = force or detect(path, data)
     warnings: list[str] = []
+    named = bool(path) and path != "-"
 
     def cnt(text: str) -> int:
         return count(text, model, use_api=use_api, opus_correction=opus_correction).tokens
 
     exact = count("x", model, use_api=use_api).exact
+    text_in = data.decode("utf-8", errors="replace")
 
     if category == "data":
         from .compress.data import compress_data
 
-        text = data.decode("utf-8", errors="replace")
-        result = compress_data(text, fmt=data_format, model=model)
-        before, after = cnt(text), result.tokens.get("chosen", cnt(result.output))
-        warnings += result.notes
+        result = compress_data(text_in, fmt=data_format, model=model)
         output = result.output
+        before, after = cnt(text_in), result.tokens.get("chosen", cnt(output))
+        warnings += result.notes
 
     elif category == "doc":
-        import os
-
         from .compress.doc import compress_doc
 
-        named = bool(path) and path != "-"
         use_path = path if (named and os.path.exists(path)) else None
         suffix = (os.path.splitext(path)[1].lower() or None) if named else None
         result = compress_doc(
@@ -90,24 +95,50 @@ def run(
         )
         output = result.output
         warnings += result.warnings
-        # Honest baseline: for text sources (HTML), compare against the original
-        # text; for binary (PDF/DOCX) compare against the raw extraction.
-        if _is_binary_doc(data):
-            before = cnt(result.raw)
-        else:
-            before = cnt(data.decode("utf-8", errors="replace"))
+        # Honest baseline: text sources (HTML) vs original text; binary
+        # (PDF/DOCX) vs the raw extraction.
+        before = cnt(result.raw) if _is_binary_doc(data) else cnt(text_in)
         after = cnt(output)
 
+    elif category == "code":
+        from .compress.code import compress_code
+
+        result = compress_code(text_in, filename=path if named else None, skeleton=skeleton)
+        output = result.output
+        warnings += result.warnings
+        before, after = cnt(text_in), cnt(output)
+
+    elif category == "email":
+        from .compress.email import compress_email
+
+        result = compress_email(data, filename=path if named else None, keep_quotes=keep_quotes)
+        output = result.output
+        warnings += result.warnings
+        before, after = cnt(text_in), cnt(output)
+
+    elif category == "transcript":
+        from .compress.transcript import compress_transcript
+
+        result = compress_transcript(
+            data, filename=path if named else None, summary=summary, ratio=ratio
+        )
+        output = result.output
+        warnings += result.warnings
+        before, after = cnt(text_in), cnt(output)
+
+    elif category == "generic":
+        # LOSSY extractive prose — only reached when explicitly forced.
+        from .compress.generic import summarize
+
+        result = summarize(text_in, ratio=ratio)
+        output = result.output
+        warnings += result.notes
+        before, after = cnt(text_in), cnt(output)
+
     else:
-        # code / email / transcript / prose / unknown -> lossless cleanup (v1).
-        text = data.decode("utf-8", errors="replace")
-        output = lossless_text_cleanup(text)
-        before, after = cnt(text), cnt(output)
-        if category in ("code", "email", "transcript"):
-            warnings.append(
-                f"'{category}' compression is a v2 feature; applied lossless "
-                "whitespace cleanup only."
-            )
+        # prose / unknown -> lossless whitespace cleanup (never drops info).
+        output = lossless_text_cleanup(text_in)
+        before, after = cnt(text_in), cnt(output)
 
     cost_saved = cost_per_tokens(before - after, model)
     report = Report(

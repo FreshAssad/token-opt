@@ -40,6 +40,7 @@ Optional extras:
 
 ```bash
 pip install "token-opt[doc]"       # PDF/DOCX/PPTX/XLSX backends (HTML & Markdown work without it)
+pip install "token-opt[code]"      # tree-sitter grammars for `compress code` (Python/JS/TS)
 pip install "token-opt[pymupdf]"   # hi-fi PDF backend — AGPL-3.0, see note below
 pip install "token-opt[gemini]"    # exact/near-exact local Gemini counting (heavy)
 ```
@@ -81,9 +82,9 @@ These are realistic ranges, **not guarantees**. Your mileage depends on the cont
 | `compress doc` (HTML) | up to ~90% | No | boilerplate-heavy pages |
 | `compress doc` (DOCX) | 40–60% | No | strips metadata / formatting |
 | `compress data` (JSON→TOON) | ~40% on uniform arrays; **as low as ~2% on nested** | No | falls back to JSON when TOON isn't smaller |
-| `compress code` *(v2)* | 30–45%; more with `--skeleton` | optional | won't break runnable code by default |
-| `compress email`/`transcript` *(v2)* | 40–70% on deep threads | mild | dedup quoted history |
-| `compress generic` (prose) *(v2)* | user-set (e.g. 2–4× at ratio 0.3) | **YES** | opt-in, clearly labelled |
+| `compress code` (AST) | 30–55%; more with `--skeleton` | optional | strips comments; default keeps code runnable |
+| `compress email` / `transcript` | 40–70% on deep threads / long calls | mild | dedup quoted history; strip timestamps + filler |
+| `compress generic` (prose) | user-set (e.g. ~2–3× at `--ratio 0.3`) | **YES** | extractive, opt-in, clearly labelled |
 
 ### Measured on the bundled corpus
 
@@ -93,7 +94,10 @@ Reproduce with `python benchmarks/run_bench.py`:
 | File | Type | Result | Before | After | Saved |
 |---|---|---|---:|---:|---:|
 | `config_nested.json` | data | toon | 152 | 121 | **20.4%** ¹ |
+| `meeting.srt` | transcript | transcript | 208 | 85 | **59.1%** ¹ |
 | `report.html` | doc | markdown | 531 | 159 | **70.1%** ¹ |
+| `sample.py` | code | code | 382 | 181 | **52.6%** ¹ |
+| `thread.eml` | email | email | 234 | 71 | **69.7%** ¹ |
 | `users_uniform.json` | data | toon | 224 | 86 | **61.6%** ¹ |
 
 ¹ heuristic estimate (tiktoken vocab unavailable in this environment).
@@ -120,16 +124,20 @@ Reproduce with `python benchmarks/run_bench.py`:
 ## Commands
 
 ```text
-token-opt count   <file|dir|->   --model --api --opus-correction --json
-token-opt cost    <file|->       --model --compare a,b,c --monthly-queries N --json
-token-opt compress doc  <file|-> --keep-tables/--no-keep-tables --strip-bibliography
-token-opt compress data <file|-> --format toon|csv
-token-opt pipe    <file|->       # auto-detect → route → report
+token-opt count   <file|dir|->         --model --api --opus-correction --json
+token-opt cost    <file|->             --model --compare a,b,c --monthly-queries N --json
+token-opt compress doc        <file|-> --keep-tables/--no-keep-tables --strip-bibliography
+token-opt compress data       <file|-> --format toon|csv
+token-opt compress code       <file|-> --skeleton                 # strip comments / signatures-only
+token-opt compress email      <file|-> --keep-quotes              # dedup quoted history
+token-opt compress transcript <file|-> --summary --ratio 0.3      # .srt/.vtt cleanup
+token-opt compress generic    <file|-> --ratio 0.3                # extractive prose (LOSSY)
+token-opt pipe    <file|->             # auto-detect → route → report
 ```
 
-Colon aliases also work: `token-opt compress:doc paper.pdf`.
+Colon aliases also work: `token-opt compress:doc paper.pdf`. Every command takes `--json`, `--quiet`, and reads `stdin` via `-`.
 
-v2 (planned): `compress code` (tree-sitter AST), `compress email`, `compress transcript`, `compress generic` (spaCy + pytextrank, lossy).
+Still on the roadmap: reversible identifier maps for `compress code`, an optional GPU `--backend llmlingua`, remote `prices.json --update`, and an n8n community node.
 
 ---
 
@@ -138,7 +146,8 @@ v2 (planned): `compress code` (tree-sitter AST), `compress email`, `compress tra
 - **Scanned / image-only PDFs** — there's no text to extract; OCR is out of scope for v1. `token-opt` warns and emits what it can.
 - **Nested / non-uniform JSON** — TOON's win comes from *uniform arrays of objects*. On deeply nested data it can be larger than JSON, so the guard emits compact JSON instead (and says so on stderr).
 - **Already-clean input** — if there's no boilerplate to remove, savings are small. That's honest, not a bug.
-- **Lossy prose mode (v2)** — extractive summarization drops sentences. It is opt-in and labelled; don't use it where you need every word.
+- **Code in unsupported languages** — without a tree-sitter grammar, `compress code` does only a safe whitespace cleanup (and tells you so on stderr).
+- **Lossy prose mode** — `compress generic` and `transcript --summary` drop sentences via extractive TextRank. Opt-in and labelled; don't use them where you need every word.
 
 ---
 
@@ -148,7 +157,10 @@ v2 (planned): `compress code` (tree-sitter AST), `compress email`, `compress tra
  file / stdin ─► type detector (extension + content sniff)
                    ├─ pdf/docx/html/pptx/xlsx → MarkItDown → strip headers/footers/page-nums
                    ├─ .json                    → TOON encoder (+ JSON fallback guard)
-                   └─ other text               → lossless whitespace cleanup
+                   ├─ source code              → tree-sitter AST → strip comments / --skeleton
+                   ├─ .eml / .mbox             → dedup quoted history + drop signatures
+                   ├─ .srt / .vtt              → strip timestamps/filler, merge speakers
+                   └─ other prose              → lossless whitespace cleanup
                          │
                          ▼
                  token counter (tiktoken / Vertex / Claude-estimate | --api ground truth)

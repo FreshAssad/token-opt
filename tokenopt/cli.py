@@ -287,25 +287,70 @@ app.command("compress:doc", hidden=True)(_doc_impl)
 app.command("compress:data", hidden=True)(_data_impl)
 
 
-# v2 stubs — present in the command surface, clearly deferred.
-def _make_v2_stub(name: str):
-    def _stub(target: str = typer.Argument("-", metavar="FILE|-")):
-        print(
-            f"[token-opt] 'compress {name}' is a v2 feature and not implemented "
-            f"in v1. Try `token-opt pipe {target}` for a lossless pass.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=2)
+def _code_impl(
+    target: str = typer.Argument("-", metavar="FILE|-"),
+    model: str = typer.Option("gpt-4o", "--model", "-m"),
+    skeleton: bool = typer.Option(False, "--skeleton", help="Signatures only; drop bodies (LOSSY)."),
+    api: bool = typer.Option(False, "--api"),
+    json_out: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet"),
+):
+    """Source code -> AST minify (strip comments); --skeleton for signatures only."""
+    data, path = _read_bytes(target)
+    result = _safe_run(path, data, model=model, use_api=api, force="code", skeleton=skeleton)
+    _emit_compress(result, json_out=json_out, quiet=quiet)
 
-    _stub.__name__ = f"compress_{name}"
-    _stub.__doc__ = f"[v2] compress {name} — not yet implemented."
-    return _stub
+
+def _email_impl(
+    target: str = typer.Argument("-", metavar="FILE|-"),
+    model: str = typer.Option("gpt-4o", "--model", "-m"),
+    keep_quotes: bool = typer.Option(False, "--keep-quotes", help="Preserve quoted lines (still de-duplicated)."),
+    api: bool = typer.Option(False, "--api"),
+    json_out: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet"),
+):
+    """Email thread (.eml/.mbox) -> dedup quoted history."""
+    data, path = _read_bytes(target)
+    result = _safe_run(path, data, model=model, use_api=api, force="email", keep_quotes=keep_quotes)
+    _emit_compress(result, json_out=json_out, quiet=quiet)
 
 
-for _name in ("code", "email", "transcript", "generic"):
-    _fn = _make_v2_stub(_name)
-    compress_app.command(_name)(_fn)
-    app.command(f"compress:{_name}", hidden=True)(_fn)
+def _transcript_impl(
+    target: str = typer.Argument("-", metavar="FILE|-"),
+    model: str = typer.Option("gpt-4o", "--model", "-m"),
+    summary: bool = typer.Option(False, "--summary", help="Extractive summary (LOSSY)."),
+    ratio: float = typer.Option(0.3, "--ratio", help="Keep-ratio when using --summary."),
+    api: bool = typer.Option(False, "--api"),
+    json_out: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet"),
+):
+    """Transcript (.srt/.vtt) -> strip timestamps/filler; merge by speaker."""
+    data, path = _read_bytes(target)
+    result = _safe_run(path, data, model=model, use_api=api, force="transcript",
+                       summary=summary, ratio=ratio)
+    _emit_compress(result, json_out=json_out, quiet=quiet)
+
+
+def _generic_impl(
+    target: str = typer.Argument("-", metavar="FILE|-"),
+    model: str = typer.Option("gpt-4o", "--model", "-m"),
+    ratio: float = typer.Option(0.3, "--ratio", help="Keep top-ratio of sentences (e.g. 0.3 = 30%)."),
+    api: bool = typer.Option(False, "--api"),
+    json_out: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet"),
+):
+    """Prose -> extractive summary (LOSSY, opt-in)."""
+    data, path = _read_bytes(target)
+    result = _safe_run(path, data, model=model, use_api=api, force="generic", ratio=ratio)
+    _emit_compress(result, json_out=json_out, quiet=quiet)
+
+
+for _impl, _name in (
+    (_code_impl, "code"), (_email_impl, "email"),
+    (_transcript_impl, "transcript"), (_generic_impl, "generic"),
+):
+    compress_app.command(_name)(_impl)
+    app.command(f"compress:{_name}", hidden=True)(_impl)
 
 
 # --------------------------------------------------------------------------- #
@@ -318,15 +363,22 @@ def pipe(
     fmt: str = typer.Option("toon", "--format", help="data format when routing to JSON: toon|csv"),
     keep_tables: bool = typer.Option(True, "--keep-tables/--no-keep-tables"),
     strip_bibliography: bool = typer.Option(False, "--strip-bibliography"),
+    skeleton: bool = typer.Option(False, "--skeleton", help="For code: signatures only."),
+    keep_quotes: bool = typer.Option(False, "--keep-quotes", help="For email: keep quoted lines."),
     api: bool = typer.Option(False, "--api"),
     json_out: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet"),
 ):
-    """Auto-detect the input type, route to the right compressor, and report."""
+    """Auto-detect the input type, route to the right compressor, and report.
+
+    Routes to data/doc/code/email/transcript or a lossless cleanup for prose.
+    Never applies the LOSSY prose summarizer (use `compress generic` for that).
+    """
     data, path = _read_bytes(target)
     result = _safe_run(
         path, data, model=model, keep_tables=keep_tables,
         strip_bibliography=strip_bibliography, data_format=fmt, use_api=api,
+        skeleton=skeleton, keep_quotes=keep_quotes,
     )
     _emit_compress(result, json_out=json_out, quiet=quiet)
 

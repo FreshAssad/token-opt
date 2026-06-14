@@ -71,3 +71,36 @@ def test_offline_no_network(monkeypatch):
 
     assert count("offline counting works fine", "gpt-4o").tokens > 0
     assert compress_data('{"x":[{"a":1},{"a":2}]}', model="gpt-4o").output
+
+
+def test_pipe_routes_email():
+    eml = b"From: a@x\nSubject: S\n\nNew content.\n> quoted history\n"
+    res = run("m.eml", eml, model="gpt-4o")
+    assert res.category == "email"
+    assert "New content." in res.output
+    assert "quoted history" not in res.output
+
+
+def test_pipe_routes_transcript():
+    srt = b"1\n00:00:01,000 --> 00:00:02,000\nAlice: Hello there.\n"
+    res = run("t.srt", srt, model="gpt-4o")
+    assert res.category == "transcript"
+    assert "-->" not in res.output
+    assert "Hello there" in res.output
+
+
+def test_pipe_routes_code_when_grammar_present():
+    pytest.importorskip("tree_sitter_python")
+    res = run("s.py", b"# c\ndef f():\n    return 1  # t\n", model="gpt-4o")
+    assert res.category == "code"
+    assert "# c" not in res.output
+    assert "def f():" in res.output
+
+
+def test_pipe_never_auto_summarizes_prose():
+    # Prose via auto-detect must be lossless cleanup, never the lossy summarizer.
+    data = b"First sentence. Second sentence. Third sentence."
+    res = run("notes.txt", data, model="gpt-4o")
+    assert res.category == "prose"
+    for s in ("First sentence.", "Second sentence.", "Third sentence."):
+        assert s in res.output
