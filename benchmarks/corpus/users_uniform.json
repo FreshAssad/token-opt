@@ -1,0 +1,9 @@
+{
+  "users": [
+    {"id": 1, "name": "Alice Johnson", "role": "admin", "active": true, "seats": 5},
+    {"id": 2, "name": "Bob Smith", "role": "member", "active": false, "seats": 1},
+    {"id": 3, "name": "Carol Diaz", "role": "member", "active": true, "seats": 2},
+    {"id": 4, "name": "Dan Lee", "role": "viewer", "active": true, "seats": 1},
+    {"id": 5, "name": "Eve Martin", "role": "admin", "active": false, "seats": 3}
+  ]
+}

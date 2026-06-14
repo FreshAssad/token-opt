@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "token-opt"
+version = "0.1.0"
+description = "Deterministically compress and count tokens for text, code, docs, and data before sending them to any LLM — locally, offline, honestly."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "freshassad", email = "assaduddinahmad@proton.me" }]
+keywords = [
+    "llm", "tokens", "tokenizer", "token-counting", "compression",
+    "tiktoken", "claude", "gpt", "gemini", "cost-estimation", "toon",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+    "Topic :: Text Processing :: General",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "typer>=0.12",
+    "tiktoken>=0.7",
+    "markitdown>=0.0.1",
+    "anthropic>=0.39",
+]
+
+[project.optional-dependencies]
+# Full document backends (PDF/DOCX/PPTX/XLSX). HTML & Markdown work without this.
+doc = ["markitdown[pdf,docx,pptx,xlsx]>=0.0.1"]
+# Optional hi-fi PDF backend. AGPL-3.0 — installing it does NOT relicense
+# token-opt, but if you redistribute a bundle that includes it, AGPL terms
+# apply to that bundle. Off by default on purpose.
+pymupdf = ["pymupdf4llm>=0.0.17"]
+# Exact/near-exact local Gemini token counting (heavy; pulls Vertex SDK).
+gemini = ["google-cloud-aiplatform[tokenization]>=1.60"]
+dev = ["pytest>=7.0"]
+all = ["token-opt[doc,pymupdf,gemini,dev]"]
+
+[project.scripts]
+token-opt = "tokenopt.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/freshassad/firstappflutter"
+Repository = "https://github.com/freshassad/firstappflutter"
+Issues = "https://github.com/freshassad/firstappflutter/issues"
+
+[tool.setuptools.packages.find]
+include = ["tokenopt*"]
+
+[tool.setuptools.package-data]
+tokenopt = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
