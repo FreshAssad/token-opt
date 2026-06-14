@@ -58,9 +58,9 @@ all = ["token-opt[doc,code,pymupdf,gemini,dev]"]
 token-opt = "tokenopt.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/freshassad/firstappflutter"
-Repository = "https://github.com/freshassad/firstappflutter"
-Issues = "https://github.com/freshassad/firstappflutter/issues"
+Homepage = "https://github.com/FreshAssad/token-opt"
+Repository = "https://github.com/FreshAssad/token-opt"
+Issues = "https://github.com/FreshAssad/token-opt/issues"
 
 [tool.setuptools.packages.find]
 include = ["tokenopt*"]
