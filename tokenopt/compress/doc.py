@@ -153,7 +153,42 @@ def _guess_suffix(data: bytes) -> str:
     return ".txt"
 
 
-def _convert(source_path: str | None, data: bytes | None, suffix: str | None):
+def _convert_pymupdf(source_path: str | None, data: bytes | None, suffix: str | None):
+    """Optional hi-fi backend via pymupdf4llm (AGPL-3.0). Best for messy PDFs."""
+    try:
+        import pymupdf4llm
+    except Exception as exc:  # pragma: no cover - import guard
+        raise DocConversionError(
+            'PyMuPDF backend not installed. Install with: '
+            'pip install "token-opt[pymupdf]"  (note: AGPL-3.0)'
+        ) from exc
+
+    path = source_path
+    tmp_name = None
+    try:
+        if path is None:
+            if data is None:
+                raise ValueError("compress_doc needs either source_path or data")
+            tmp = tempfile.NamedTemporaryFile(suffix=suffix or _guess_suffix(data), delete=False)
+            tmp.write(data)
+            tmp.close()
+            tmp_name = path = tmp.name
+        raw = pymupdf4llm.to_markdown(path)
+    except DocConversionError:
+        raise
+    except Exception as exc:
+        raise DocConversionError(f"PyMuPDF could not convert document: {exc}") from exc
+    finally:
+        if tmp_name:
+            os.unlink(tmp_name)
+    return raw or "", None
+
+
+def _convert(source_path: str | None, data: bytes | None, suffix: str | None,
+             backend: str = "markitdown"):
+    if backend == "pymupdf":
+        return _convert_pymupdf(source_path, data, suffix)
+
     try:
         from markitdown import MarkItDown
     except Exception as exc:  # pragma: no cover - import guard
@@ -201,9 +236,12 @@ def compress_doc(
     suffix: str | None = None,
     keep_tables: bool = True,
     strip_bibliography: bool = False,
+    backend: str = "markitdown",
 ) -> DocResult:
-    raw, title = _convert(source_path, data, suffix)
+    raw, title = _convert(source_path, data, suffix, backend=backend)
     warnings: list[str] = []
+    if backend == "pymupdf":
+        warnings.append("using PyMuPDF backend (AGPL-3.0).")
 
     if not raw.strip():
         warnings.append(

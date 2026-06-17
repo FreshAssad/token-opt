@@ -68,6 +68,21 @@ def test_postprocess_pipeline():
     assert "1" not in out.splitlines()
 
 
+def test_pymupdf_backend_roundtrips_a_pdf():
+    pytest.importorskip("pymupdf4llm")
+    pymupdf = pytest.importorskip("pymupdf")
+    from tokenopt.compress.doc import compress_doc
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Hello from the PyMuPDF backend test.")
+    pdf_bytes = doc.tobytes()
+
+    res = compress_doc(data=pdf_bytes, suffix=".pdf", backend="pymupdf")
+    assert "Hello from the PyMuPDF backend" in res.output
+    assert any("PyMuPDF" in w for w in res.warnings)  # AGPL note surfaced
+
+
 def test_markitdown_html_integration():
     md = pytest.importorskip("markitdown")  # skip if not installed
     from tokenopt.compress.doc import compress_doc
