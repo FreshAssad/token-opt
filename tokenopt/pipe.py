@@ -59,6 +59,9 @@ def run(
     keep_quotes: bool = False,
     summary: bool = False,
     ratio: float = 0.3,
+    rename: bool = False,
+    language: str | None = None,
+    doc_backend: str = "markitdown",
 ) -> PipeResult:
     import os
 
@@ -92,6 +95,7 @@ def run(
             suffix=suffix,
             keep_tables=keep_tables,
             strip_bibliography=strip_bibliography,
+            backend=doc_backend,
         )
         output = result.output
         warnings += result.warnings
@@ -103,7 +107,10 @@ def run(
     elif category == "code":
         from .compress.code import compress_code
 
-        result = compress_code(text_in, filename=path if named else None, skeleton=skeleton)
+        result = compress_code(
+            text_in, filename=path if named else None, language=language,
+            skeleton=skeleton, rename=rename,
+        )
         output = result.output
         warnings += result.warnings
         before, after = cnt(text_in), cnt(output)
