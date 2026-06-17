@@ -56,8 +56,9 @@ def _skeleton_cfg(language: str):
 class CodeResult:
     output: str
     language: str | None
-    mode: str  # "minify" | "skeleton" | "whitespace"
+    mode: str  # "minify" | "skeleton" | "rename" | "whitespace"
     warnings: list[str] = field(default_factory=list)
+    rename_map: dict | None = None  # original -> short (when mode == "rename")
 
 
 @lru_cache(maxsize=8)
@@ -171,6 +172,90 @@ def _ws_cleanup(text: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Reversible identifier map (Python only — uses stdlib ast + symtable)
+# --------------------------------------------------------------------------- #
+def _python_rename(source: str):
+    """Shorten Python *local* identifiers safely; return (renamed_source, map).
+
+    Safety comes from accurate scope info (``symtable``) plus the AST shape:
+    only names that are local to some function scope — and never a
+    module-level/global/imported name, builtin, keyword, or named in a
+    global/nonlocal statement — are renamed. Attribute names and keyword-argument
+    names are plain strings in the AST (not ``Name`` nodes), so a Name-based
+    transform can never corrupt them. The result is produced by ``ast.unparse``
+    and re-validated with ``compile()``.
+    """
+    import ast
+    import builtins as _builtins
+    import itertools
+    import keyword
+    import string
+    import symtable
+
+    tree = ast.parse(source)
+    table = symtable.symtable(source, "<token-opt>", "exec")
+
+    unsafe: set[str] = set(table.get_identifiers())  # module-level names
+    candidates: set[str] = set()
+
+    def visit(scope):
+        if scope.get_type() == "class":
+            unsafe.update(scope.get_identifiers())  # methods/attrs are public API
+        for sym in scope.get_symbols():
+            try:
+                if sym.is_global() or sym.is_imported():
+                    unsafe.add(sym.get_name())
+                elif scope.get_type() == "function" and sym.is_local():
+                    candidates.add(sym.get_name())
+            except ValueError:
+                pass
+        for child in scope.get_children():
+            visit(child)
+
+    visit(table)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            unsafe.update(node.names)
+
+    skip = set(keyword.kwlist) | set(dir(_builtins)) | {"self", "cls", "_"}
+    safe = {n for n in (candidates - unsafe - skip) if not n.startswith("__")}
+    if not safe:
+        return source, {}
+
+    used = unsafe | skip | safe
+
+    def gen_short():
+        for size in itertools.count(1):
+            for combo in itertools.product(string.ascii_lowercase, repeat=size):
+                yield "".join(combo)
+
+    g = gen_short()
+    mapping: dict[str, str] = {}
+    for name in sorted(safe):
+        short = next(g)
+        while short in used:
+            short = next(g)
+        used.add(short)
+        mapping[name] = short
+
+    class _Rename(ast.NodeTransformer):
+        def visit_Name(self, node):
+            node.id = mapping.get(node.id, node.id)
+            return node
+
+        def visit_arg(self, node):
+            node.arg = mapping.get(node.arg, node.arg)
+            return node
+
+    _Rename().visit(tree)
+    ast.fix_missing_locations(tree)
+    renamed = ast.unparse(tree)
+    compile(renamed, "<token-opt>", "exec")  # safety net: must stay valid Python
+    return renamed, mapping
+
+
+# --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
 def compress_code(
@@ -179,11 +264,35 @@ def compress_code(
     filename: str | None = None,
     language: str | None = None,
     skeleton: bool = False,
+    rename: bool = False,
 ) -> CodeResult:
     lang = language or language_for(filename)
-    parser = _get_parser(lang) if lang else None
     warnings: list[str] = []
 
+    if rename:
+        if lang == "python":
+            try:
+                renamed, rmap = _python_rename(source)
+            except Exception as exc:  # never emit broken code — fall back
+                warnings.append(f"--rename failed ({exc}); falling back to minify.")
+            else:
+                if rmap:
+                    legend = "\n".join(
+                        f"# {short} = {orig}"
+                        for orig, short in sorted(rmap.items(), key=lambda kv: kv[1])
+                    )
+                    out = (
+                        renamed.rstrip()
+                        + "\n\n# token-opt identifier map (restore in the model's reply):\n"
+                        + legend
+                        + "\n"
+                    )
+                    return CodeResult(out, lang, "rename", warnings, rename_map=rmap)
+                warnings.append("--rename: no safely-renamable identifiers; minified instead.")
+        else:
+            warnings.append(f"--rename is Python-only for now; minified '{lang}' instead.")
+
+    parser = _get_parser(lang) if lang else None
     if parser is None:
         if lang is None:
             warnings.append("unknown language; applied whitespace cleanup only.")
