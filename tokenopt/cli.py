@@ -251,6 +251,7 @@ def _emit_compress(result, *, json_out: bool, quiet: bool) -> None:
 def _doc_impl(
     target: str = typer.Argument("-", metavar="FILE|-"),
     model: str = typer.Option("gpt-4o", "--model", "-m"),
+    backend: str = typer.Option("markitdown", "--backend", help="markitdown (default) | pymupdf (hi-fi PDF, AGPL-3.0)."),
     keep_tables: bool = typer.Option(True, "--keep-tables/--no-keep-tables", help="Preserve (default) or flatten pipe tables."),
     strip_bibliography: bool = typer.Option(False, "--strip-bibliography", help="Drop a trailing References/Bibliography section."),
     api: bool = typer.Option(False, "--api"),
@@ -262,6 +263,7 @@ def _doc_impl(
     result = _safe_run(
         path, data, model=model, keep_tables=keep_tables,
         strip_bibliography=strip_bibliography, use_api=api, force="doc",
+        doc_backend=backend,
     )
     _emit_compress(result, json_out=json_out, quiet=quiet)
 
@@ -290,14 +292,17 @@ app.command("compress:data", hidden=True)(_data_impl)
 def _code_impl(
     target: str = typer.Argument("-", metavar="FILE|-"),
     model: str = typer.Option("gpt-4o", "--model", "-m"),
+    lang: Optional[str] = typer.Option(None, "--lang", help="Force language (python|javascript|typescript) — needed for stdin."),
     skeleton: bool = typer.Option(False, "--skeleton", help="Signatures only; drop bodies (LOSSY)."),
+    rename: bool = typer.Option(False, "--rename", help="Shorten local identifiers + append a reversible map (Python)."),
     api: bool = typer.Option(False, "--api"),
     json_out: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet"),
 ):
-    """Source code -> AST minify (strip comments); --skeleton for signatures only."""
+    """Source code -> AST minify (strip comments); --skeleton or --rename for more."""
     data, path = _read_bytes(target)
-    result = _safe_run(path, data, model=model, use_api=api, force="code", skeleton=skeleton)
+    result = _safe_run(path, data, model=model, use_api=api, force="code",
+                       skeleton=skeleton, rename=rename, language=lang)
     _emit_compress(result, json_out=json_out, quiet=quiet)
 
 
@@ -364,6 +369,7 @@ def pipe(
     keep_tables: bool = typer.Option(True, "--keep-tables/--no-keep-tables"),
     strip_bibliography: bool = typer.Option(False, "--strip-bibliography"),
     skeleton: bool = typer.Option(False, "--skeleton", help="For code: signatures only."),
+    rename: bool = typer.Option(False, "--rename", help="For code: shorten local identifiers (Python)."),
     keep_quotes: bool = typer.Option(False, "--keep-quotes", help="For email: keep quoted lines."),
     api: bool = typer.Option(False, "--api"),
     json_out: bool = typer.Option(False, "--json"),
@@ -378,7 +384,7 @@ def pipe(
     result = _safe_run(
         path, data, model=model, keep_tables=keep_tables,
         strip_bibliography=strip_bibliography, data_format=fmt, use_api=api,
-        skeleton=skeleton, keep_quotes=keep_quotes,
+        skeleton=skeleton, keep_quotes=keep_quotes, rename=rename,
     )
     _emit_compress(result, json_out=json_out, quiet=quiet)
 

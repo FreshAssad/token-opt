@@ -45,7 +45,7 @@ pip install "token-opt[pymupdf]"   # hi-fi PDF backend — AGPL-3.0, see note be
 pip install "token-opt[gemini]"    # exact/near-exact local Gemini counting (heavy)
 ```
 
-> `compress doc` on **HTML/Markdown** works out of the box. For **PDF/DOCX/PPTX/XLSX**, install `token-opt[doc]`; otherwise `token-opt` prints a clear one-line hint instead of failing.
+> `compress doc` on **HTML/Markdown** works out of the box. For **PDF/DOCX/PPTX/XLSX**, install `token-opt[doc]`; otherwise `token-opt` prints a clear one-line hint instead of failing. For messy/complex PDFs, `--backend pymupdf` (needs `token-opt[pymupdf]`, **AGPL-3.0**) often extracts cleaner text.
 
 ---
 
@@ -82,7 +82,7 @@ These are realistic ranges, **not guarantees**. Your mileage depends on the cont
 | `compress doc` (HTML) | up to ~90% | No | boilerplate-heavy pages |
 | `compress doc` (DOCX) | 40–60% | No | strips metadata / formatting |
 | `compress data` (JSON→TOON) | ~40% on uniform arrays; **as low as ~2% on nested** | No | falls back to JSON when TOON isn't smaller |
-| `compress code` (AST) | 30–55%; more with `--skeleton` | optional | strips comments; default keeps code runnable |
+| `compress code` (AST) | 30–55%; more with `--skeleton` / `--rename` | optional | strips comments; default keeps code runnable |
 | `compress email` / `transcript` | 40–70% on deep threads / long calls | mild | dedup quoted history; strip timestamps + filler |
 | `compress generic` (prose) | user-set (e.g. ~2–3× at `--ratio 0.3`) | **YES** | extractive, opt-in, clearly labelled |
 
@@ -126,9 +126,9 @@ Reproduce with `python benchmarks/run_bench.py`:
 ```text
 token-opt count   <file|dir|->         --model --api --opus-correction --json
 token-opt cost    <file|->             --model --compare a,b,c --monthly-queries N --json
-token-opt compress doc        <file|-> --keep-tables/--no-keep-tables --strip-bibliography
+token-opt compress doc        <file|-> --backend markitdown|pymupdf --strip-bibliography
 token-opt compress data       <file|-> --format toon|csv
-token-opt compress code       <file|-> --skeleton                 # strip comments / signatures-only
+token-opt compress code       <file|-> --skeleton --rename --lang # minify / signatures / shorten locals
 token-opt compress email      <file|-> --keep-quotes              # dedup quoted history
 token-opt compress transcript <file|-> --summary --ratio 0.3      # .srt/.vtt cleanup
 token-opt compress generic    <file|-> --ratio 0.3                # extractive prose (LOSSY)
@@ -137,7 +137,9 @@ token-opt pipe    <file|->             # auto-detect → route → report
 
 Colon aliases also work: `token-opt compress:doc paper.pdf`. Every command takes `--json`, `--quiet`, and reads `stdin` via `-`.
 
-Still on the roadmap: reversible identifier maps for `compress code`, an optional GPU `--backend llmlingua`, remote `prices.json --update`, and an n8n community node.
+`compress code --rename` (Python) shortens *local* identifiers and appends a reversible legend (`# a = original_name`), so you can restore names in the model's reply. It's scope-accurate (`ast` + `symtable`): module/public names, attributes, `self`, and builtins are never touched, and the result is re-validated so it always stays runnable.
+
+Still on the roadmap: an optional GPU `--backend llmlingua`, remote `prices.json --update`, and an n8n community node.
 
 ---
 
